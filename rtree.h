@@ -20,14 +20,11 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 
-struct rtree_leaf_metadata {
-    int val; 
-} metadata_t;
-
-int rtree_insert(void *p, metadata_t m);
+int rtree_insert(void *p, void *metadata);
 int rtree_delete(void *p);
-int rtree_destroy();
 
-metadata_t* rtree_find(void *p);
-metadata_t* rtree_find_and_delete(void *p);
+void* rtree_find(void *p);
+void* rtree_find_and_delete(void *p);
+
+int rtree_destroy();
 
