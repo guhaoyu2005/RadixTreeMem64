@@ -1,4 +1,5 @@
 *.o
 *.tmp
 *.swp
+*.core
 rtree

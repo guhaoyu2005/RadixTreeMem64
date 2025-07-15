@@ -1,6 +1,6 @@
 CC       = clang
 CFLAGS   = -Wall -I/usr/local/include -g -x c 
-LDFLAGS  = -L/usr/local/lib -lev 
+LDFLAGS  = -L/usr/local/lib 
 OBJS = 		test.o rtree.o
 TARGET   = rtree
 
