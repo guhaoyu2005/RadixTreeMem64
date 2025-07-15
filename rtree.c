@@ -37,6 +37,7 @@ SOFTWARE.
 #define u64 uint64_t
 
 #define MEMBITS 64
+#define CHUNK 1  //TODO: support chunk 2, 4...
 
 #ifdef RTREE_DEBUG
 void
@@ -61,7 +62,7 @@ struct rtree_node {
 	node_t *parent;
 	// Binary tree: we are using addr in binary format so children starts
 	// with either zero or one.
-	node_t *children[2];
+	node_t *children[1<<CHUNK];
 	// metadata (last node)
 	void *metadata;
 };
@@ -75,7 +76,7 @@ struct rtree_node {
 #define GETBIT(X, N) (((X) & (((u64)1) << (MEMBITS - (N) - 1))) > 0)
 
 void* rtree_internal_find(rtree *root, void *p, int delete);
-void rtree_internal_delete_node(rtree *root, node_t *node, int norollup);
+void rtree_internal_delete_node(rtree *root, node_t *node, int delete_metadata);
 int rtree_internal_insert(rtree *root, void *p, void *metadata);
 
 inline int
@@ -102,6 +103,11 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 			
 			bit += cn->bit_len;
 			child_idx = GETBIT(ip, bit);
+
+			if (!cn->children[child_idx]) {
+				break;
+			}
+
 			cn = cn->children[child_idx];
 			continue;
 		}
@@ -115,6 +121,11 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 		// If the difference falls in children
 		if (yl >= cn->bit_len) {
 			bit += cn->bit_len;
+
+			if (!cn->children[child_idx]) {
+				break;
+			}
+
 			cn = cn->children[child_idx];
 			continue;
 		}
@@ -139,7 +150,11 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 		sn->bit_len = yl;
 		sn->parent = cn;
 		sn->children[0] = cn->children[0];
+		if (cn->children[0]) 
+			cn->children[0]->parent = sn;
 		sn->children[1] = cn->children[1];
+		if (cn->children[1]) 
+			cn->children[1]->parent = sn;
 		sn->metadata = md;
 		assert(l != 0);
 
@@ -180,57 +195,39 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 	return 0;
 }
 
+/*
+ * Only supports fast delete now -> if the node on path is single child, we
+ * don't compress it. 
+ * TODO: add compact delete so saves space.
+ */
 void
-rtree_internal_delete_node(rtree *root, node_t *node, int norollup)
+rtree_internal_delete_node(rtree *root, node_t *node, int delete_metadata)
 {
-	node_t *cn = node, *parent, *last = NULL;
+	node_t *cn = node, *parent;
 
-	// Deleting me may cause the whole path to be invalid, roll up to the
-	// last node that has a sibling
-	if (cn->parent && (!norollup)) {
-		// If parent has 1 children, then roll up
-		if (!(cn->parent->children[0] && cn->parent->children[1])) {
-			rtree_internal_delete_node(root, cn->parent, 0);
-			return;
+	parent = cn->parent;
+
+	if (cn->children[0])
+		rtree_internal_delete_node(root, cn->children[0], delete_metadata);
+	if (cn->children[1])
+		rtree_internal_delete_node(root, cn->children[1], delete_metadata);
+
+	if (cn->metadata && delete_metadata && root->rtree_cb_delete) {
+		(*root->rtree_cb_delete)(cn->metadata);
+		cn->metadata = NULL;
+	}
+
+	if (parent) {
+		if (parent->children[0] == cn) {
+			parent->children[0] = NULL;
+		} else if (parent->children[1] == cn) {
+			parent->children[1] = NULL;
+		} else {
+			assert(0);
 		}
 	}
 
-	// If current node has children, delete them first
-	if (cn->children[0])
-		rtree_internal_delete_node(root, cn->children[0], 1);
-	if (cn->children[1])
-		rtree_internal_delete_node(root, cn->children[1], 1);
-
-	// If current node has metadata, delete it then
-	if (cn->metadata && root->rtree_cb_delete) {
-		(*root->rtree_cb_delete)(cn->metadata);
-	}
-
-	if (norollup) {
-		RTFREE(cn);
-		return;
-	}
-
-	parent = cn->parent;
-	// If I am root, then fix info 
-	if (parent == NULL) {
-		cn->key = 0;
-		cn->bit = 0;
-		cn->bit_len = MEMBITS;
-		cn->parent = NULL;
-		cn->children[0] = NULL;
-		cn->children[1] = NULL;
-		cn->metadata = NULL;
-		return 0;
-	}
-
-	last = cn;
 	RTFREE(cn);
-
-	cn = parent;
-	// Last stage merge the only child with node, and keep merging up
-	//TODO: here
-	
 }
 
 inline void*
@@ -247,7 +244,11 @@ rtree_internal_find(rtree *root, void *p, int delete)
 		bit += cn->bit_len;
 		if (cn->metadata) {
 			assert(bit == MEMBITS);
-			return cn->metadata;
+			if (delete) {
+				rtree_internal_delete_node(root, cn, 1);
+				return NULL;
+			} else 
+				return cn->metadata;
 		} else {
 			child_idx = GETBIT(ip, bit);
 			cn = cn->children[child_idx];
@@ -268,23 +269,16 @@ rtree_insert(rtree *r, void *p, void *metadata)
 	return rtree_internal_insert(r, p, metadata);
 }
 
-int
+void
 rtree_delete(rtree *r, void *p)
 {
-	
-	return rtree_internal_delete(r, p, 0);
+	rtree_internal_find(r, p, 1);
 }
 
 void*
 rtree_find(rtree *r, void *p)
 {
 	return rtree_internal_find(r, p, 0);
-}
-
-void*
-rtree_find_and_delete(rtree *r, void *p)
-{
-	return rtree_internal_find(r, p, 1);
 }
 
 int

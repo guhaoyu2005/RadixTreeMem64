@@ -6,7 +6,8 @@
 
 #include "rtree.h"
 
-#define ITERATION 50000
+#define REPEAT 2000
+#define ITERATION 5000
 
 typedef struct metadata {
 	uint64_t addr;
@@ -26,24 +27,29 @@ main()
 
 	srand(time(NULL)); 
 
-	printf("inserting..\n");
-	for (int i=0;i<ITERATION;i++) {
-		while (1) {
-			/* I know this is 32bit, but anyways... */
-			md[i].addr = rand();
-			if (md[i].addr != 0 && !rtree_find(r, (void *)md[i].addr))
-				break;
+	for (int rep=0;rep<REPEAT;rep++) {
+		printf("Repeat %d\n", rep);
+		for (int i=0;i<ITERATION;i++) {
+			while (1) {
+				/* I know this is 32bit, but anyways... */
+				md[i].addr = rand();
+				if (md[i].addr != 0 && !rtree_find(r, (void *)md[i].addr))
+					break;
+			}
+			rtree_insert(r, (void *)md[i].addr, &md[i]);
 		}
-		rtree_insert(r, (void *)md[i].addr, &md[i]);
+
+		for (int i=0;i<ITERATION;i++) {
+			addr = (uint64_t)rtree_find(r, (void *)md[i].addr);
+			assert(addr);
+			assert(((md_t *)addr)->addr == md[i].addr);
+		}
+
+		for (int i=0;i<ITERATION;i++) {
+			rtree_delete(r, (void *)md[i].addr);
+		}
 	}
 
-	printf("checking..\n");
-	for (int i=0;i<ITERATION;i++) {
-		addr = (uint64_t)rtree_find(r, (void *)md[i].addr);
-		assert(addr);
-		assert(((md_t *)addr)->addr == md[i].addr);
-	}
-	
 	printf("pass.\n");
 
 	rtree_destroy(r);

@@ -34,10 +34,11 @@ typedef struct rtree_instance {
 } rtree;
 
 int rtree_insert(rtree *r, void *p, void *metadata);
-int rtree_delete(rtree *r, void *p);
+void rtree_delete(rtree *r, void *p);
 
 void* rtree_find(rtree *r, void *p);
-void* rtree_find_and_delete(rtree *r, void *p);
+// Find address exactly the same or the closest address this is smaller
+void* rtree_find_le(rtree *r, void *p);
 
 int rtree_init(rtree *r);
 int rtree_destroy(rtree *r);
