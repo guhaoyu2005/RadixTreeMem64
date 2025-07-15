@@ -19,12 +19,25 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+#include <stdint.h>
 
-int rtree_insert(void *p, void *metadata);
-int rtree_delete(void *p);
+typedef struct rtree_instance {
+	void* root;
+	// callbacks
+	//  rtree_cb_insert_duplication(current, new)
+	void (*rtree_cb_insert_duplication)(void *, void *);
+#ifdef RTREE_CUSTOM_ALLOCATION
+	void* (*rtree_malloc)(uint64_t size);
+	void (*rtree_free)(void *ptr);
+#endif
+} rtree;
 
-void* rtree_find(void *p);
-void* rtree_find_and_delete(void *p);
+int rtree_insert(rtree *r, void *p, void *metadata);
+int rtree_delete(rtree *r, void *p);
 
-int rtree_destroy();
+void* rtree_find(rtree *r, void *p);
+void* rtree_find_and_delete(rtree *r, void *p);
+
+int rtree_init(rtree *r);
+int rtree_destroy(rtree *r);
 

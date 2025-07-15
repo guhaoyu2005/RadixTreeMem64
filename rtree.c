@@ -20,16 +20,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 #include <stdio.h>
-#include <stdint.h>
 #include <assert.h>
 
 #include "rtree.h"
 
 #ifndef RTREE_CUSTOM_ALLOCATION
 #include <stdlib.h>
-
 #define RTMALLOC malloc
 #define RTFREE free
+#else
+#define RTMALLOC (root->rtree_malloc)
+#define RTFREE (root->rtree_free)
 #endif
 
 #define u8 uint8_t
@@ -48,7 +49,6 @@ PB(u64 n)
 #endif
 
 typedef struct rtree_node node_t;
-
 struct rtree_node {
 	// Address bits at current node
 	u64 key;
@@ -66,15 +66,6 @@ struct rtree_node {
 	void *metadata;
 };
 
-node_t rtree_root = {
-    .key = 0,
-    .bit = 0,
-    .bit_len = 64,
-    .parent = NULL,
-    .children = { NULL },
-    .metadata = NULL
-};
-
 #define LOG2(X) ((unsigned) (8*sizeof (unsigned long long) - __builtin_clzll((X)) - 1))
 #define MASK64(B, L) ( (B) == 0 ? \
     ( ((u64)(-1)) - ((L)>0 ? (((u64)1) << (MEMBITS - (B) - (L))) - 1 : 0) ) : \
@@ -83,12 +74,14 @@ node_t rtree_root = {
       ((u64)-1) ))
 #define GETBIT(X, N) (((X) & (((u64)1) << (MEMBITS - (N) - 1))) > 0)
 
+void* rtree_internal_find(rtree *root, void *p, int delete);
+int rtree_internal_delete(rtree *root, void *p);
+int rtree_internal_insert(rtree *root, void *p, void *metadata);
 
-
-int
-rtree_insert(void *p, void *metadata)
+inline int
+rtree_internal_insert(rtree *root, void *p, void *metadata)
 {	
-	node_t *cn = &rtree_root, *sn;
+	node_t *cn = (node_t *)root->root, *sn;
 	u64 ip = (u64)p, pp, x, k;
 	u8 bit = 0, child_idx, l, yl, b, d;
 	void *md;
@@ -103,9 +96,8 @@ rtree_insert(void *p, void *metadata)
 		// Or if this is the last part of address, update the metadata?
 		if (!x) {
 			if (cn->bit_len + bit == MEMBITS) {
-				// TODO: update metadata???
-				//assert(0);
-				printf("DUPLICATED\n");
+				if (root->rtree_cb_insert_duplication)
+					(*root->rtree_cb_insert_duplication)(cn->metadata, metadata);
 				return 0;
 			}
 			
@@ -189,15 +181,15 @@ rtree_insert(void *p, void *metadata)
 	return 0;
 }
 
-int
-rtree_delete(void *p)
+inline int
+rtree_internal_delete(rtree *root, void *p)
 {
 }
 
-void*
-rtree_find(void *p)
+inline void*
+rtree_internal_find(rtree *root, void *p, int delete)
 {
-	node_t *cn = &rtree_root;
+	node_t *cn = (node_t *)root->root;
 	u64 ip = (u64)p;
 	u8 bit = 0, child_idx;
 
@@ -218,15 +210,63 @@ rtree_find(void *p)
 	return NULL;
 }
 
-void*
-rtree_find_and_delete(void *p)
+/*
+ *================================================================
+ * Interfaces
+ *================================================================
+ */
+int
+rtree_insert(rtree *r, void *p, void *metadata)
 {
+	return rtree_internal_insert(r, p, metadata);
 }
-
 
 int
-rtree_destroy()
+rtree_delete(rtree *r, void *p)
 {
+	return rtree_internal_delete(r, p);
 }
 
+void*
+rtree_find(rtree *r, void *p)
+{
+	return rtree_internal_find(r, p, 0);
+}
+
+void*
+rtree_find_and_delete(rtree *r, void *p)
+{
+	return rtree_internal_find(r, p, 1);
+}
+
+int
+rtree_init(rtree *r)
+{
+	node_t *root;
+
+	if (!r) return -1;
+
+	root = RTMALLOC(sizeof(node_t));
+	root->key = 0;
+	root->bit = 0;
+	root->bit_len = MEMBITS;
+	root->parent = NULL;
+	root->children[0] = NULL;
+	root->children[1] = NULL;
+	root->metadata = NULL;
+
+	r->root = (void *)root;
+	r->rtree_cb_insert_duplication = NULL;
+#ifdef RTREE_CUSTOM_ALLOCATION
+	r->rtree_malloc = NULL;
+	r->rtree_free = NULL;
+#endif
+
+	return 0;
+}
+
+int
+rtree_destroy(rtree *r)
+{
+}
 
