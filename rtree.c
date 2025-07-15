@@ -75,7 +75,7 @@ struct rtree_node {
 #define GETBIT(X, N) (((X) & (((u64)1) << (MEMBITS - (N) - 1))) > 0)
 
 void* rtree_internal_find(rtree *root, void *p, int delete);
-int rtree_internal_delete(rtree *root, void *p);
+void rtree_internal_delete_node(rtree *root, node_t *node, int norollup);
 int rtree_internal_insert(rtree *root, void *p, void *metadata);
 
 inline int
@@ -89,7 +89,6 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 	while (cn) {
 		// Check partial address with stored key
 		pp = ip & MASK64(bit, cn->bit_len);
-		//pp = (ip >> (MEMBITS - cn->bit_len - bit)) & ((1 << cn->bit_len) - 1);
 		// XOR them
 		x = pp ^ cn->key;
 		// If they are the same, then insert to the child
@@ -181,9 +180,57 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 	return 0;
 }
 
-inline int
-rtree_internal_delete(rtree *root, void *p)
+void
+rtree_internal_delete_node(rtree *root, node_t *node, int norollup)
 {
+	node_t *cn = node, *parent, *last = NULL;
+
+	// Deleting me may cause the whole path to be invalid, roll up to the
+	// last node that has a sibling
+	if (cn->parent && (!norollup)) {
+		// If parent has 1 children, then roll up
+		if (!(cn->parent->children[0] && cn->parent->children[1])) {
+			rtree_internal_delete_node(root, cn->parent, 0);
+			return;
+		}
+	}
+
+	// If current node has children, delete them first
+	if (cn->children[0])
+		rtree_internal_delete_node(root, cn->children[0], 1);
+	if (cn->children[1])
+		rtree_internal_delete_node(root, cn->children[1], 1);
+
+	// If current node has metadata, delete it then
+	if (cn->metadata && root->rtree_cb_delete) {
+		(*root->rtree_cb_delete)(cn->metadata);
+	}
+
+	if (norollup) {
+		RTFREE(cn);
+		return;
+	}
+
+	parent = cn->parent;
+	// If I am root, then fix info 
+	if (parent == NULL) {
+		cn->key = 0;
+		cn->bit = 0;
+		cn->bit_len = MEMBITS;
+		cn->parent = NULL;
+		cn->children[0] = NULL;
+		cn->children[1] = NULL;
+		cn->metadata = NULL;
+		return 0;
+	}
+
+	last = cn;
+	RTFREE(cn);
+
+	cn = parent;
+	// Last stage merge the only child with node, and keep merging up
+	//TODO: here
+	
 }
 
 inline void*
@@ -224,7 +271,8 @@ rtree_insert(rtree *r, void *p, void *metadata)
 int
 rtree_delete(rtree *r, void *p)
 {
-	return rtree_internal_delete(r, p);
+	
+	return rtree_internal_delete(r, p, 0);
 }
 
 void*
@@ -257,6 +305,7 @@ rtree_init(rtree *r)
 
 	r->root = (void *)root;
 	r->rtree_cb_insert_duplication = NULL;
+	r->rtree_cb_delete = NULL;
 #ifdef RTREE_CUSTOM_ALLOCATION
 	r->rtree_malloc = NULL;
 	r->rtree_free = NULL;
@@ -266,7 +315,16 @@ rtree_init(rtree *r)
 }
 
 int
-rtree_destroy(rtree *r)
+rtree_destroy(rtree *root)
 {
+	node_t *root_node;
+
+	if (!root) return -1;
+
+	root_node = (node_t *)root->root;
+	rtree_delete(root, NULL);
+	RTFREE(root_node);
+
+	return 0;
 }
 

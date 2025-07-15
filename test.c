@@ -29,6 +29,7 @@ main()
 	printf("inserting..\n");
 	for (int i=0;i<ITERATION;i++) {
 		while (1) {
+			/* I know this is 32bit, but anyways... */
 			md[i].addr = rand();
 			if (md[i].addr != 0 && !rtree_find(r, (void *)md[i].addr))
 				break;

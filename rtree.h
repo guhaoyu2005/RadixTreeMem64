@@ -26,6 +26,7 @@ typedef struct rtree_instance {
 	// callbacks
 	//  rtree_cb_insert_duplication(current, new)
 	void (*rtree_cb_insert_duplication)(void *, void *);
+	void (*rtree_cb_delete)(void *);
 #ifdef RTREE_CUSTOM_ALLOCATION
 	void* (*rtree_malloc)(uint64_t size);
 	void (*rtree_free)(void *ptr);
