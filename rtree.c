@@ -22,22 +22,30 @@ SOFTWARE.
 #include <stdio.h>
 #include <stdint.h>
 #include <assert.h>
-#include <stdlib.h>
 
 #include "rtree.h"
+
+#ifndef RTREE_CUSTOM_ALLOCATION
+#include <stdlib.h>
+
+#define RTMALLOC malloc
+#define RTFREE free
+#endif
 
 #define u8 uint8_t
 #define u64 uint64_t
 
 #define MEMBITS 64
 
+#ifdef RTREE_DEBUG
 void
 PB(u64 n) 
 {
-	for (int i=7; i>=0; i--) {
+	for (int i=MEMBITS-1; i>=0; i--) {
 		printf("%d", (((((u64)1)<<(u64)i) & n) > 0));
 	}
 }
+#endif
 
 typedef struct rtree_node node_t;
 
@@ -75,43 +83,21 @@ node_t rtree_root = {
       ((u64)-1) ))
 #define GETBIT(X, N) (((X) & (((u64)1) << (MEMBITS - (N) - 1))) > 0)
 
-#define RTMALLOC malloc
-#define RTFREE free
+
 
 int
 rtree_insert(void *p, void *metadata)
 {	
 	node_t *cn = &rtree_root, *sn;
 	u64 ip = (u64)p, pp, x, k;
-	u8 bit = 0, child_idx, l, yl, b, d, c;
+	u8 bit = 0, child_idx, l, yl, b, d;
 	void *md;
 
-	printf("\nInserting %lu: ", p);
-	PB((u64)p);
-	printf("\n");
 	while (cn) {
-		printf("Current key(b%d, L%d): ", cn->bit, cn->bit_len);
-		PB((u64)cn->key);
-		printf("\n");
-		if (0 && !cn->parent) {
-			child_idx = GETBIT(ip, 0);
-			if (cn->children[child_idx]) {
-				cn = cn->children[child_idx];
-				continue;
-			}
-			// Root stores nothing, go straight to the child
-			goto insert;
-		}
-
 		// Check partial address with stored key
 		pp = ip & MASK64(bit, cn->bit_len);
 		//pp = (ip >> (MEMBITS - cn->bit_len - bit)) & ((1 << cn->bit_len) - 1);
 		// XOR them
-		printf("--Parital key: ");
-		PB((u64)pp);
-		printf(" Saved key: ");
-		PB((u64)cn->key);
-		printf("\n");
 		x = pp ^ cn->key;
 		// If they are the same, then insert to the child
 		// Or if this is the last part of address, update the metadata?
@@ -129,12 +115,11 @@ rtree_insert(void *p, void *metadata)
 			continue;
 		}
 
-		// Not same? Split child
+		// Not the same? Split child
 		// which bit if different
 		d = LOG2(x);
 		yl = d - (MEMBITS - (cn->bit + cn->bit_len) - 1); 
 		child_idx = GETBIT(pp, (MEMBITS - d - 1));
-		printf("diff bit %d, yank %d\n", MEMBITS - d, yl); 
 
 		// If the difference falls in children
 		if (yl >= cn->bit_len) {
@@ -149,51 +134,33 @@ rtree_insert(void *p, void *metadata)
 		k = (cn->key & (((u64)1 << l) - 1)); 
 		md = cn->metadata;
 
-		printf("curr old bit %d len %d\n", cn->bit, cn->bit_len);
 		// update current node
 		cn->bit_len -= yl;
 		cn->key &= MASK64(cn->bit, cn->bit_len);
 
-		printf("updated curr bit %d len %d\n", cn->bit, cn->bit_len);
-		printf("yanking len %d\n", yl);
-
-		// Do we need to compress the splitted part into the child
-		if ((cn->children[0] == NULL) ^ (cn->children[1] == NULL)) {
-			c = cn->children[0] == NULL ? 1: 0;
-			sn = cn->children[c];
-			sn->bit -= yl; 
-			sn->bit_len += yl;
-			assert(sn->bit_len != 0);
-			printf("compressed into child: b%d l%d\n", sn->bit, sn->bit_len);
-		} else {
-			// Create cn splitted node
-			sn = RTMALLOC(sizeof(node_t));
-			if (sn == NULL) {
-				return -1;
-			}
-			sn->key = k;
-			sn->bit = b;
-			sn->bit_len = yl;
-			sn->parent = cn;
-			sn->children[0] = cn->children[0];
-			sn->children[1] = cn->children[1];
-			sn->metadata = md;
-			assert(l != 0);
+		// Create cn splitted node
+		sn = RTMALLOC(sizeof(node_t));
+		if (sn == NULL) {
+			return -1;
 		}
-
-		printf("Splitting(right ? %d, bit %d, L:%d): ", child_idx ^ 1, b, l);
-		PB((u64)k);
-		printf("\n");
+		sn->key = k;
+		sn->bit = b;
+		sn->bit_len = yl;
+		sn->parent = cn;
+		sn->children[0] = cn->children[0];
+		sn->children[1] = cn->children[1];
+		sn->metadata = md;
+		assert(l != 0);
 
 		// Insert cn splitted node
 		cn->children[child_idx ^ 1] = sn; 
 		cn->children[child_idx] = NULL;
 		cn->metadata = NULL;
 
-insert:
 		// update bit
 		bit += cn->bit_len;
 
+		// Check if we need to go deeper
 		if (cn->children[child_idx] == NULL) {
 			break;
 		} else {
@@ -210,7 +177,6 @@ insert:
 	}
 
 	sn->bit = bit;
-	//TODO CHECK DO I NEED -1 here  dinner time no time to check
 	sn->bit_len = (MEMBITS - bit);
 	sn->key = (ip & MASK64(sn->bit, sn->bit_len));
 	sn->parent = cn;
@@ -220,12 +186,6 @@ insert:
 	assert(sn->bit_len != 0);
 	
 	cn->children[child_idx] = sn;
-
-	printf("new insert(right ? %d, bit %d, L:%d): ", child_idx, sn->bit, sn->bit_len);
-	
-	PB((u64)sn->key);
-
-	printf("\n");
 	return 0;
 }
 
@@ -241,25 +201,16 @@ rtree_find(void *p)
 	u64 ip = (u64)p;
 	u8 bit = 0, child_idx;
 
-	printf("\n");
 	while (cn) {
-		printf("Current key(b%d l%d): ", cn->bit, cn->bit_len);
-		PB((u64)cn->key);
-		printf(" masked: ");
-		PB((u64)(ip & MASK64(cn->bit, cn->bit_len)));
-		printf("\n");
 		if ((ip & MASK64(cn->bit, cn->bit_len)) != cn->key)
 			break;
 
-		printf("key matched, checking child\n");
 		bit += cn->bit_len;
 		if (cn->metadata) {
-			printf("bit %d\n", bit);
 			assert(bit == MEMBITS);
 			return cn->metadata;
 		} else {
 			child_idx = GETBIT(ip, bit);
-			printf("looking for left ? %d\n", child_idx == 0);
 			cn = cn->children[child_idx];
 		}
 	}

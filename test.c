@@ -6,7 +6,7 @@
 
 #include "rtree.h"
 
-#define ITERATION 500
+#define ITERATION 50000
 
 typedef struct metadata {
 	uint64_t addr;
@@ -36,6 +36,8 @@ main()
 		assert(addr);
 		assert(((md_t *)addr)->addr == md[i].addr);
 	}
+	
+	printf("pass.\n");
 
 	rtree_destroy();
 	return 0;
