@@ -39,7 +39,7 @@ SOFTWARE.
 #define MEMBITS 64
 #define CHUNK 1  //TODO: support chunk 2, 4...
 
-#ifdef RTREE_DEBUG
+#ifndef RTREE_DEBUG
 void
 PB(u64 n) 
 {
@@ -75,9 +75,10 @@ struct rtree_node {
       ((u64)-1) ))
 #define GETBIT(X, N) (((X) & (((u64)1) << (MEMBITS - (N) - 1))) > 0)
 
-void* rtree_internal_find(rtree *root, void *p, int delete);
+void* rtree_internal_find(rtree *root, void *p, int delete, int le);
 void rtree_internal_delete_node(rtree *root, node_t *node, int delete_metadata);
 int rtree_internal_insert(rtree *root, void *p, void *metadata);
+node_t* rtree_internal_find_node_largest(node_t *cn, node_t *source, void *p, u8 bit);
 
 inline int
 rtree_internal_insert(rtree *root, void *p, void *metadata)
@@ -97,7 +98,9 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 		if (!x) {
 			if (cn->bit_len + bit == MEMBITS) {
 				if (root->rtree_cb_insert_duplication)
-					(*root->rtree_cb_insert_duplication)(cn->metadata, metadata);
+					(*root->rtree_cb_insert_duplication)(
+					    cn->metadata, metadata
+					);
 				return 0;
 			}
 			
@@ -208,9 +211,11 @@ rtree_internal_delete_node(rtree *root, node_t *node, int delete_metadata)
 	parent = cn->parent;
 
 	if (cn->children[0])
-		rtree_internal_delete_node(root, cn->children[0], delete_metadata);
+		rtree_internal_delete_node(root, 
+		    cn->children[0], delete_metadata);
 	if (cn->children[1])
-		rtree_internal_delete_node(root, cn->children[1], delete_metadata);
+		rtree_internal_delete_node(root, 
+		    cn->children[1], delete_metadata);
 
 	if (cn->metadata && delete_metadata && root->rtree_cb_delete) {
 		(*root->rtree_cb_delete)(cn->metadata);
@@ -231,15 +236,22 @@ rtree_internal_delete_node(rtree *root, node_t *node, int delete_metadata)
 }
 
 inline void*
-rtree_internal_find(rtree *root, void *p, int delete)
+rtree_internal_find(rtree *root, void *p, int delete, int le)
 {
 	node_t *cn = (node_t *)root->root;
 	u64 ip = (u64)p;
 	u8 bit = 0, child_idx;
 
+	assert(~(delete & le));
+
 	while (cn) {
-		if ((ip & MASK64(cn->bit, cn->bit_len)) != cn->key)
+		if ((ip & MASK64(cn->bit, cn->bit_len)) != cn->key) {
+			if (le) {
+				assert(cn->parent);
+				cn = cn->parent;
+			}
 			break;
+		}
 
 		bit += cn->bit_len;
 		if (cn->metadata) {
@@ -251,11 +263,73 @@ rtree_internal_find(rtree *root, void *p, int delete)
 				return cn->metadata;
 		} else {
 			child_idx = GETBIT(ip, bit);
+			if (le && cn->children[child_idx] == NULL) {
+				break;
+			}
 			cn = cn->children[child_idx];
 		}
 	}
 
+	// Now we are at the last node that the key is equivalent 
+	// if less-equal toggle is on, we grab the right-most node
+	if (le) {
+		assert(cn);
+		printf("Finding le at bit%d\n", bit);
+		cn = rtree_internal_find_node_largest(cn, NULL, p, bit);
+		if (cn) {
+			return cn->metadata;
+		}
+	}
+
 	return NULL;
+}
+
+node_t* 
+rtree_internal_find_node_largest(node_t *cn, node_t *source, void *p, u8 bit)
+{
+	node_t *n, *rt;
+	u64 addr;
+
+	if (!cn) return NULL;
+	
+	// Check self first
+	addr = (u64)p & MASK64(0, bit);
+	printf("mask: ");
+	PB((u64)addr);
+	printf("\n");
+	printf("key(b %u l %u): ", cn->bit, cn->bit_len);
+	PB(cn->key);
+	printf("\n");
+
+	addr |= cn->key;
+
+	if (addr < (u64)p) {
+		if (cn->metadata) {
+			assert(bit + cn->bit_len == MEMBITS);
+			return cn;
+		}
+	} else {
+		assert(addr != (u64)p);
+		return NULL;
+	}
+
+	// Order: children largest->smallest, parent
+	for (int i=(1<<CHUNK)-1;i>=0;i--) {
+		n = cn->children[i];
+		if (n == source)
+			continue;
+		
+		rt = rtree_internal_find_node_largest(n, cn, p, 
+		    bit);
+		if (rt)
+			return rt;
+	}
+
+	if (source != cn->parent)
+		return rtree_internal_find_node_largest(cn->parent, cn, p, 
+		    bit - cn->bit_len);
+	else
+		return NULL;
 }
 
 /*
@@ -272,13 +346,19 @@ rtree_insert(rtree *r, void *p, void *metadata)
 void
 rtree_delete(rtree *r, void *p)
 {
-	rtree_internal_find(r, p, 1);
+	rtree_internal_find(r, p, 1, 0);
 }
 
 void*
 rtree_find(rtree *r, void *p)
 {
-	return rtree_internal_find(r, p, 0);
+	return rtree_internal_find(r, p, 0, 0);
+}
+
+void*
+rtree_find_le(rtree *r, void *p)
+{
+	return rtree_internal_find(r, p, 0, 1);
 }
 
 int
