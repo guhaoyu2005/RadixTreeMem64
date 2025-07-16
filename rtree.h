@@ -19,6 +19,9 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+#ifndef __RTREE_H_
+#define __RTREE_H_
+
 typedef struct rtree_instance {
 	void* root;
 	// callbacks
@@ -41,3 +44,4 @@ void* rtree_find_le(rtree *r, void *p);
 int rtree_init(rtree *r);
 int rtree_destroy(rtree *r);
 
+#endif
