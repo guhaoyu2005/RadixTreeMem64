@@ -78,7 +78,7 @@ struct rtree_node {
 #define GETBIT(X, N) (((X) & (((u64)1) << (MEMBITS - (N) - 1))) > 0)
 #define GETKEY(X) ((X->key) & MASK64(X->bit, X->bit_len))
 
-void* rtree_internal_find(rtree *root, void *p, int delete, int le);
+void* rtree_internal_find(rtree *root, void *p, int del, int le);
 void rtree_internal_delete_node(rtree *root, node_t *node, int delete_metadata);
 int rtree_internal_insert(rtree *root, void *p, void *metadata);
 node_t* rtree_internal_find_node_largest(node_t *cn, node_t *source, void *p, 
@@ -155,7 +155,7 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 		assert(cn->bit_len <= MEMBITS);
 
 		// Create cn splitted node
-		sn = RTMALLOC(sizeof(node_t));
+		sn = (node_t *)RTMALLOC(sizeof(node_t));
 		if (sn == NULL) {
 			return -1;
 		}
@@ -195,7 +195,7 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 
 	// Insert it
 	// Create cn splitted node
-	sn = RTMALLOC(sizeof(node_t));
+	sn = (node_t *)RTMALLOC(sizeof(node_t));
 	if (sn == NULL) {
 		return -1;
 	}
@@ -252,13 +252,13 @@ rtree_internal_delete_node(rtree *root, node_t *node, int delete_metadata)
 }
 
 inline void*
-rtree_internal_find(rtree *root, void *p, int delete, int le)
+rtree_internal_find(rtree *root, void *p, int del, int le)
 {
 	node_t *cn = (node_t *)root->root;
 	u64 ip = (u64)p;
 	u8 bit = 0, child_idx;
 
-	assert(~(delete & le));
+	assert(~(del & le));
 
 	while (cn) {
 		if ((ip & MASK64(cn->bit, cn->bit_len)) != GETKEY(cn)) {
@@ -274,7 +274,7 @@ rtree_internal_find(rtree *root, void *p, int delete, int le)
 		bit += cn->bit_len;
 		if (cn->metadata) {
 			assert(bit == MEMBITS);
-			if (delete) {
+			if (del) {
 				rtree_internal_delete_node(root, cn, 1);
 				return NULL;
 			} else 
@@ -384,7 +384,7 @@ rtree_init(rtree *root)
 
 	if (!root) return -1;
 
-	r = RTMALLOC(sizeof(node_t));
+	r = (node_t *)RTMALLOC(sizeof(node_t));
 	r->key = 0;
 	r->bit = 0;
 	r->bit_len = MEMBITS;
