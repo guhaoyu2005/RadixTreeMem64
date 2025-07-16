@@ -394,13 +394,6 @@ rtree_init(rtree *root)
 	r->metadata = NULL;
 
 	root->root = (void *)r;
-	root->rtree_cb_insert_duplication = NULL;
-	root->rtree_cb_delete = NULL;
-#ifdef RTREE_CUSTOM_ALLOCATION
-	root->rtree_malloc = NULL;
-	root->rtree_free = NULL;
-#endif
-
 	return 0;
 }
 
