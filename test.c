@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <time.h>
+#include <string.h>
 
 #include "rtree.h"
 
@@ -29,7 +30,7 @@ find_le(md_t *arr, int n, uint64_t target)
 
 	for (int i=0;i<n;i++) {
 		if (arr[i].addr < target && 
-		    arr[i].deleted == 0 &&
+		    (arr[i].deleted == 0) &&
 		    (DIST(arr[i].addr, target) < DIST(target, closest))) {
 			closest = arr[i].addr;
 		}
@@ -42,10 +43,8 @@ int
 main()
 {
 	rtree *r = malloc(sizeof(rtree));
-	uint64_t addr;
+	uint64_t addr, verify;
 	md_t md[ITERATION];
-
-	//goto findle_test;
 
 	if (rtree_init(r) != 0) {
 		printf("Failed to init rtree.\n");
@@ -61,7 +60,7 @@ main()
 		for (int i=0;i<ITERATION;i++) {
 			while (1) {
 				/* I know this is 32bit, but anyways... */
-				md[i].addr = rand();
+				md[i].addr = rand() + 1;
 				md[i].deleted = 0;
 				if (md[i].addr != 0 && !rtree_find(r, (void *)md[i].addr))
 					break;
@@ -76,7 +75,7 @@ main()
 		}
 
 		for (int i=0;i<ITERATION;i++) {
-			md[i].deleted = 1;
+			md[i].deleted = 0;
 			rtree_delete(r, (void *)md[i].addr);
 		}
 	}
@@ -86,33 +85,59 @@ main()
 	rtree_destroy(r);
 	free(r);
 
-findle_test:
+find_le_test:
+	memset(md, 0, sizeof(md));
 	// Get a clean rtree and test find_le
 	if (rtree_init(r) != 0) {
 		printf("Failed to init rtree.\n");
 		exit(0);
 	}
 	
-	for (int i=0;i<ITERATION;i++) {
-		while (1) {
-			/* I know this is 32bit, but anyways... */
-			md[i].addr = rand();
-			md[i].deleted = 0;
-			if (md[i].addr != 0 && !rtree_find(r, (void *)md[i].addr))
-				break;
+	for (int rep=0;rep<REPEAT;rep++) {
+		printf("find_le Repeat %d\n", rep);
+		for (int i=0;i<ITERATION;i++) {
+			assert(md[i].deleted == 0);
+			while (1) {
+				/* I know this is 32bit, but anyways... */
+				md[i].addr = rand() + 1;
+				if (md[i].addr != 0 && !rtree_find(r, (void *)md[i].addr)) {
+					for (int j=0;j<i;j++) {
+						assert(md[j].addr != md[i].addr);
+					}
+					break;
+				}
+			}
+			rtree_insert(r, (void *)md[i].addr, &md[i]);
 		}
-		rtree_insert(r, (void *)md[i].addr, &md[i]);
-	}
+	
+		for (int i=2;i<ITERATION;i+=2) {
+			rtree_delete(r, (void *)md[i].addr);
+			md[i].deleted = 1;
 
-	for (int i=2;i<ITERATION;i+=2) {
-		printf("Deleting %lu\n", md[i].addr);
-		rtree_delete(r, (void *)md[i].addr);
-		md[i].deleted = 1;
-		addr = (uint64_t)rtree_find_le(r, (void *)md[i].addr);
-		assert(addr);
-		printf("found %lu\n", ((md_t *)addr)->addr);
-		printf("should be %lu\n", find_le(md, ITERATION, md[i].addr));
-		assert(((md_t *)addr)->addr == find_le(md, ITERATION, md[i].addr));
+			addr = (uint64_t)rtree_find_le(r, (void *)md[i].addr);
+			verify = find_le(md, ITERATION, md[i].addr);
+			if (verify != (uint64_t)-1) {
+				if (addr == NULL) {
+					printf("orig %lu, verify: %lu\n", 
+					    md[i].addr, verify);
+					assert(0);
+				}
+				assert(((md_t *)addr)->addr == verify);
+			} else {
+				if (addr == NULL) {
+					continue;
+				}
+			}
+		}
+
+		for (int i=0;i<ITERATION;i++) {
+			if (md[i].deleted) {
+				md[i].deleted = 0;
+				continue;
+			}
+			md[i].deleted = 0;
+			rtree_delete(r, (void *)md[i].addr);
+		}
 	}
 	
 	printf("find_le pass.\n");

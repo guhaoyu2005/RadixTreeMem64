@@ -46,6 +46,7 @@ PB(u64 n)
 	for (int i=MEMBITS-1; i>=0; i--) {
 		printf("%d", (((((u64)1)<<(u64)i) & n) > 0));
 	}
+	printf("\n");
 }
 #endif
 
@@ -91,6 +92,7 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 	void *md;
 
 	while (cn) {
+		assert(bit == cn->bit);
 		// Check partial address with stored key
 		pp = ip & MASK64(bit, cn->bit_len);
 		// XOR them
@@ -127,6 +129,8 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 		if (yl >= cn->bit_len) {
 			bit += cn->bit_len;
 
+			assert(bit <= MEMBITS);
+
 			if (!cn->children[child_idx]) {
 				break;
 			}
@@ -138,12 +142,16 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 		// save info for node splitted from cn  
 		b = MEMBITS - d - 1;
 		l = d + 1;
-		k = GETKEY(cn); 
+		k = cn->key; 
 		md = cn->metadata;
 
 		// update current node
 		cn->bit_len -= yl;
 		cn->key &= MASK64(0, cn->bit + cn->bit_len);
+
+		assert((cn->key & MASK64(0, cn->bit + cn->bit_len)) == 
+		    (ip & MASK64(0, cn->bit + cn->bit_len)));
+		assert(cn->bit_len <= MEMBITS);
 
 		// Create cn splitted node
 		sn = RTMALLOC(sizeof(node_t));
@@ -161,7 +169,9 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 		if (cn->children[1]) 
 			cn->children[1]->parent = sn;
 		sn->metadata = md;
+
 		assert(l != 0);
+		assert(sn->bit_len <= MEMBITS);
 
 		// Insert cn splitted node
 		cn->children[child_idx ^ 1] = sn; 
@@ -170,6 +180,8 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 
 		// update bit
 		bit += cn->bit_len;
+		
+		assert(bit <= MEMBITS);
 
 		// Check if we need to go deeper
 		if (cn->children[child_idx] == NULL) {
@@ -194,7 +206,10 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 	sn->children[0] = NULL;
 	sn->children[1] = NULL;
 	sn->metadata = metadata;
+
 	assert(sn->bit_len != 0);
+	assert(sn->bit + sn->bit_len == MEMBITS);
+	assert(sn->key == ip);
 	
 	cn->children[child_idx] = sn;
 	return 0;
@@ -212,25 +227,23 @@ rtree_internal_delete_node(rtree *root, node_t *node, int delete_metadata)
 
 	parent = cn->parent;
 
-	if (cn->children[0])
-		rtree_internal_delete_node(root, 
-		    cn->children[0], delete_metadata);
-	if (cn->children[1])
-		rtree_internal_delete_node(root, 
-		    cn->children[1], delete_metadata);
+	for (int i=0;i<(1<<CHUNK);i++) {
+		if (!cn->children[i])
+			continue;
+		rtree_internal_delete_node(root, cn->children[i], delete_metadata);
+	}
 
-	if (cn->metadata && delete_metadata && root->rtree_cb_delete) {
-		(*root->rtree_cb_delete)(cn->metadata);
+	if (cn->metadata && delete_metadata) {
+		if (root->rtree_cb_delete)
+			(*root->rtree_cb_delete)(cn->metadata);
 		cn->metadata = NULL;
 	}
 
 	if (parent) {
-		if (parent->children[0] == cn) {
-			parent->children[0] = NULL;
-		} else if (parent->children[1] == cn) {
-			parent->children[1] = NULL;
-		} else {
-			assert(0);
+		for (int i=0;i<(1<<CHUNK);i++) {
+			if (parent->children[i] == cn) {
+				parent->children[i] = NULL;
+			}
 		}
 	}
 
@@ -249,8 +262,10 @@ rtree_internal_find(rtree *root, void *p, int delete, int le)
 	while (cn) {
 		if ((ip & MASK64(cn->bit, cn->bit_len)) != GETKEY(cn)) {
 			if (le) {
-				assert(cn->parent);
 				cn = cn->parent;
+				if (!cn) {
+					return NULL;
+				}
 			}
 			break;
 		}
@@ -277,6 +292,8 @@ rtree_internal_find(rtree *root, void *p, int delete, int le)
 	// if less-equal toggle is on, we grab the right-most node
 	if (le) {
 		assert(cn);
+		assert(bit < MEMBITS);
+
 		cn = rtree_internal_find_node_largest(cn, NULL, p, bit);
 		if (cn) {
 			return cn->metadata;
@@ -297,8 +314,7 @@ rtree_internal_find_node_largest(node_t *cn, node_t *source, void *p, u8 bit)
 	assert(bit == cn->bit);
 	
 	// Check self first
-	addr = (u64)p & MASK64(0, bit);
-	addr |= cn->key;
+	addr = cn->key;
 
 	// If current node, whose addr. is smaller than target, 
 	// contains metadata then return
@@ -309,17 +325,18 @@ rtree_internal_find_node_largest(node_t *cn, node_t *source, void *p, u8 bit)
 			return cn;
 		}
 	} else {
-		assert(addr != (u64)p);
-		return NULL;
+		assert(!(((cn->bit + cn->bit_len) == MEMBITS) && (addr == (u64)p)));
 	}
 
 	// Always do recursive check from highest children to lowest
 	for (int i=(1<<CHUNK)-1;i>=0;i--) {
 		n = cn->children[i];
-		if (n == source) continue;
+		if (n == source)
+			continue;
 		
 		rt = rtree_internal_find_node_largest(n, cn, p, bit+cn->bit_len);
-		if (rt) return rt;
+		if (rt) 
+			return rt;
 	}
 
 	// Lastly check parent
