@@ -94,7 +94,7 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 		// Check partial address with stored key
 		pp = ip & MASK64(bit, cn->bit_len);
 		// XOR them
-		x = pp ^ cn->key;
+		x = pp ^ GETKEY(cn);
 		// If they are the same, then insert to the child
 		// Or if this is the last part of address, update the metadata?
 		if (!x) {
@@ -138,12 +138,12 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 		// save info for node splitted from cn  
 		b = MEMBITS - d - 1;
 		l = d + 1;
-		k = (cn->key & (((u64)1 << l) - 1)); 
+		k = GETKEY(cn); 
 		md = cn->metadata;
 
 		// update current node
 		cn->bit_len -= yl;
-		cn->key &= MASK64(cn->bit, cn->bit_len);
+		cn->key &= MASK64(0, cn->bit + cn->bit_len);
 
 		// Create cn splitted node
 		sn = RTMALLOC(sizeof(node_t));
@@ -189,7 +189,7 @@ rtree_internal_insert(rtree *root, void *p, void *metadata)
 
 	sn->bit = bit;
 	sn->bit_len = (MEMBITS - bit);
-	sn->key = (ip & MASK64(sn->bit, sn->bit_len));
+	sn->key = (ip & MASK64(0, sn->bit + sn->bit_len));
 	sn->parent = cn;
 	sn->children[0] = NULL;
 	sn->children[1] = NULL;
@@ -247,7 +247,7 @@ rtree_internal_find(rtree *root, void *p, int delete, int le)
 	assert(~(delete & le));
 
 	while (cn) {
-		if ((ip & MASK64(cn->bit, cn->bit_len)) != cn->key) {
+		if ((ip & MASK64(cn->bit, cn->bit_len)) != GETKEY(cn)) {
 			if (le) {
 				assert(cn->parent);
 				cn = cn->parent;

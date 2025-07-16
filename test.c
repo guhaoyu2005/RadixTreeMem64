@@ -45,7 +45,7 @@ main()
 	uint64_t addr;
 	md_t md[ITERATION];
 
-	goto findle_test;
+	//goto findle_test;
 
 	if (rtree_init(r) != 0) {
 		printf("Failed to init rtree.\n");
