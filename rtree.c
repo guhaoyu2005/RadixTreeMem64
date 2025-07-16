@@ -20,6 +20,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 #include <stdio.h>
+#include <stdint.h>
 #include <assert.h>
 
 #include "rtree.h"
@@ -39,7 +40,7 @@ SOFTWARE.
 #define MEMBITS 64
 #define CHUNK 1  //TODO: support chunk 2, 4...
 
-#ifndef RTREE_DEBUG
+#ifdef RTREE_DEBUG
 void
 PB(u64 n) 
 {

@@ -19,8 +19,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#include <stdint.h>
-
 typedef struct rtree_instance {
 	void* root;
 	// callbacks
@@ -28,7 +26,7 @@ typedef struct rtree_instance {
 	void (*rtree_cb_insert_duplication)(void *, void *);
 	void (*rtree_cb_delete)(void *);
 #ifdef RTREE_CUSTOM_ALLOCATION
-	void* (*rtree_malloc)(uint64_t size);
+	void* (*rtree_malloc)(int size);
 	void (*rtree_free)(void *ptr);
 #endif
 } rtree;
