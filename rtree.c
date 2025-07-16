@@ -266,6 +266,8 @@ rtree_internal_find(rtree *root, void *p, int del, int le)
 				cn = cn->parent;
 				if (!cn) {
 					return NULL;
+				} else {
+					bit -= cn->bit_len;
 				}
 			}
 			break;

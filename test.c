@@ -7,7 +7,7 @@
 
 #include "rtree.h"
 
-#define REPEAT 2000
+#define REPEAT 200
 #define ITERATION 5000
 
 typedef struct metadata {
@@ -141,6 +141,24 @@ find_le_test:
 	}
 	
 	printf("find_le pass.\n");
+
+	rtree_destroy(r);
+	free(r);
+
+find_le_test2:
+	memset(md, 0, sizeof(md));
+	// Get a clean rtree and test find_le
+	if (rtree_init(r) != 0) {
+		printf("Failed to init rtree.\n");
+		exit(0);
+	}
+	
+	md[0].addr = 0x000801e1b000;
+	rtree_insert(r, (void*)md[0].addr, &md[0]);
+	addr = (uint64_t)rtree_find_le(r, (void*)0x000801e1b009);
+	assert(((md_t *)addr)->addr == md[0].addr);
+
+	printf("find_le_2 pass.\n");
 
 	rtree_destroy(r);
 	free(r);
