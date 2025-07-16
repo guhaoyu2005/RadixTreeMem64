@@ -74,11 +74,13 @@ struct rtree_node {
       ((((u64)1) << (MEMBITS - (B))) - 1 - ((((u64)1) << (MEMBITS - (B) - (L))) - 1)) : \
       ((u64)-1) ))
 #define GETBIT(X, N) (((X) & (((u64)1) << (MEMBITS - (N) - 1))) > 0)
+#define GETKEY(X) ((X->key) & MASK64(X->bit, X->bit_len))
 
 void* rtree_internal_find(rtree *root, void *p, int delete, int le);
 void rtree_internal_delete_node(rtree *root, node_t *node, int delete_metadata);
 int rtree_internal_insert(rtree *root, void *p, void *metadata);
-node_t* rtree_internal_find_node_largest(node_t *cn, node_t *source, void *p, u8 bit);
+node_t* rtree_internal_find_node_largest(node_t *cn, node_t *source, void *p, 
+    u8 bit);
 
 inline int
 rtree_internal_insert(rtree *root, void *p, void *metadata)
@@ -264,6 +266,7 @@ rtree_internal_find(rtree *root, void *p, int delete, int le)
 		} else {
 			child_idx = GETBIT(ip, bit);
 			if (le && cn->children[child_idx] == NULL) {
+				bit -= cn->bit_len;
 				break;
 			}
 			cn = cn->children[child_idx];
@@ -274,7 +277,6 @@ rtree_internal_find(rtree *root, void *p, int delete, int le)
 	// if less-equal toggle is on, we grab the right-most node
 	if (le) {
 		assert(cn);
-		printf("Finding le at bit%d\n", bit);
 		cn = rtree_internal_find_node_largest(cn, NULL, p, bit);
 		if (cn) {
 			return cn->metadata;
@@ -291,19 +293,17 @@ rtree_internal_find_node_largest(node_t *cn, node_t *source, void *p, u8 bit)
 	u64 addr;
 
 	if (!cn) return NULL;
+
+	assert(bit == cn->bit);
 	
 	// Check self first
 	addr = (u64)p & MASK64(0, bit);
-	printf("mask: ");
-	PB((u64)addr);
-	printf("\n");
-	printf("key(b %u l %u): ", cn->bit, cn->bit_len);
-	PB(cn->key);
-	printf("\n");
-
 	addr |= cn->key;
 
+	// If current node, whose addr. is smaller than target, 
+	// contains metadata then return
 	if (addr < (u64)p) {
+		// Total checking order guarantees the first seen node is target
 		if (cn->metadata) {
 			assert(bit + cn->bit_len == MEMBITS);
 			return cn;
@@ -313,21 +313,19 @@ rtree_internal_find_node_largest(node_t *cn, node_t *source, void *p, u8 bit)
 		return NULL;
 	}
 
-	// Order: children largest->smallest, parent
+	// Always do recursive check from highest children to lowest
 	for (int i=(1<<CHUNK)-1;i>=0;i--) {
 		n = cn->children[i];
-		if (n == source)
-			continue;
+		if (n == source) continue;
 		
-		rt = rtree_internal_find_node_largest(n, cn, p, 
-		    bit);
-		if (rt)
-			return rt;
+		rt = rtree_internal_find_node_largest(n, cn, p, bit+cn->bit_len);
+		if (rt) return rt;
 	}
 
-	if (source != cn->parent)
+	// Lastly check parent
+	if (source != cn->parent && cn->parent != NULL)
 		return rtree_internal_find_node_largest(cn->parent, cn, p, 
-		    bit - cn->bit_len);
+		    bit - cn->parent->bit_len);
 	else
 		return NULL;
 }

@@ -11,6 +11,7 @@
 
 typedef struct metadata {
 	uint64_t addr;
+	int deleted;
 } md_t;
 
 void
@@ -28,6 +29,7 @@ find_le(md_t *arr, int n, uint64_t target)
 
 	for (int i=0;i<n;i++) {
 		if (arr[i].addr < target && 
+		    arr[i].deleted == 0 &&
 		    (DIST(arr[i].addr, target) < DIST(target, closest))) {
 			closest = arr[i].addr;
 		}
@@ -60,6 +62,7 @@ main()
 			while (1) {
 				/* I know this is 32bit, but anyways... */
 				md[i].addr = rand();
+				md[i].deleted = 0;
 				if (md[i].addr != 0 && !rtree_find(r, (void *)md[i].addr))
 					break;
 			}
@@ -73,6 +76,7 @@ main()
 		}
 
 		for (int i=0;i<ITERATION;i++) {
+			md[i].deleted = 1;
 			rtree_delete(r, (void *)md[i].addr);
 		}
 	}
@@ -90,16 +94,24 @@ findle_test:
 	}
 	
 	for (int i=0;i<ITERATION;i++) {
-		md[i].addr = rand();//i+1;
+		while (1) {
+			/* I know this is 32bit, but anyways... */
+			md[i].addr = rand();
+			md[i].deleted = 0;
+			if (md[i].addr != 0 && !rtree_find(r, (void *)md[i].addr))
+				break;
+		}
 		rtree_insert(r, (void *)md[i].addr, &md[i]);
 	}
 
 	for (int i=2;i<ITERATION;i+=2) {
 		printf("Deleting %lu\n", md[i].addr);
 		rtree_delete(r, (void *)md[i].addr);
+		md[i].deleted = 1;
 		addr = (uint64_t)rtree_find_le(r, (void *)md[i].addr);
 		assert(addr);
 		printf("found %lu\n", ((md_t *)addr)->addr);
+		printf("should be %lu\n", find_le(md, ITERATION, md[i].addr));
 		assert(((md_t *)addr)->addr == find_le(md, ITERATION, md[i].addr));
 	}
 	
