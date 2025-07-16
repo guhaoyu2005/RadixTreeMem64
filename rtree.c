@@ -378,27 +378,27 @@ rtree_find_le(rtree *r, void *p)
 }
 
 int
-rtree_init(rtree *r)
+rtree_init(rtree *root)
 {
-	node_t *root;
+	node_t *r;
 
-	if (!r) return -1;
+	if (!root) return -1;
 
-	root = RTMALLOC(sizeof(node_t));
-	root->key = 0;
-	root->bit = 0;
-	root->bit_len = MEMBITS;
-	root->parent = NULL;
-	root->children[0] = NULL;
-	root->children[1] = NULL;
-	root->metadata = NULL;
+	r = RTMALLOC(sizeof(node_t));
+	r->key = 0;
+	r->bit = 0;
+	r->bit_len = MEMBITS;
+	r->parent = NULL;
+	r->children[0] = NULL;
+	r->children[1] = NULL;
+	r->metadata = NULL;
 
-	r->root = (void *)root;
-	r->rtree_cb_insert_duplication = NULL;
-	r->rtree_cb_delete = NULL;
+	root->root = (void *)r;
+	root->rtree_cb_insert_duplication = NULL;
+	root->rtree_cb_delete = NULL;
 #ifdef RTREE_CUSTOM_ALLOCATION
-	r->rtree_malloc = NULL;
-	r->rtree_free = NULL;
+	root->rtree_malloc = NULL;
+	root->rtree_free = NULL;
 #endif
 
 	return 0;
